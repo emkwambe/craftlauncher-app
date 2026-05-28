@@ -1,0 +1,16 @@
+:root{--bg:#080808;--bg-2:#0f0f0f;--bg-3:#141414;--border:#1c1c1c;--border-2:#252525;--text:#e2ddd6;--text-2:#8a8680;--text-3:#444240;--amber:#f5a623;--red:#e8472a;--green:#4ade80;--font-serif:"DM Serif Display",Georgia,serif;--font-sans:"Instrument Sans",system-ui,sans-serif;--font-mono:"JetBrains Mono","Courier New",monospace;--r:8px;--sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px)}
+*{box-sizing:border-box}
+html,body,#root{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:16px;line-height:1.6;overflow-x:hidden}
+*{scrollbar-width:thin;scrollbar-color:#2a2a2a transparent}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:4px}
+input,textarea,button,select{font-family:inherit;font-size:inherit}
+button{cursor:pointer}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
