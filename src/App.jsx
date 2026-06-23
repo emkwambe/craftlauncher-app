@@ -589,7 +589,7 @@ Self-contained: all CSS in one <style> tag, fully mobile-responsive, no JS frame
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 8000,
           system: [{ type: 'text', text: LAUNCHKIT_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{ role: 'user', content: userPrompt }],
@@ -688,7 +688,7 @@ Formatting: clean, print-ready, ONE page. Light background, professional typogra
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 4000,
           system: [{ type: 'text', text: LAUNCHDECK_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{ role: 'user', content: userPrompt }],
@@ -782,7 +782,7 @@ Respond ONLY with valid JSON: {"twitter":"…","indiehackers":"…","linkedin":"
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 4000,
           system: [{ type: 'text', text: THREAD_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{ role: 'user', content: userPrompt }],
@@ -872,7 +872,7 @@ Respond ONLY with valid JSON:
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 4000,
           system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{ role: 'user', content: userPrompt }],
@@ -940,7 +940,7 @@ Respond with valid JSON only: {${platforms.map(p => `"${p.id}":"post here"`).joi
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 4000,
           system: [{ type: 'text', text: POSTFLOW_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [{ role: 'user', content: userPrompt }],
