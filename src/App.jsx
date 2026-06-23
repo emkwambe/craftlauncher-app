@@ -344,6 +344,10 @@ export default function App() {
   const [vault, setVault]           = useState({ plan: 'free', totalCount: 0, lockedCount: 0, limit: 3, sessions: [] })
   const [vaultLoading, setVaultLoading] = useState(false)
   const [activeSession, setActiveSession] = useState(null)
+  // LaunchSignal
+  const [currentSessionId, setCurrentSessionId] = useState('')
+  const [signal, setSignal]         = useState(null)
+  const [signalLoading, setSignalLoading] = useState(false)
   // LaunchKit
   const [lkOpen, setLkOpen]         = useState(false)
   const [lkLoading, setLkLoading]   = useState(false)
@@ -424,12 +428,26 @@ export default function App() {
   const saveSession = async (brief, postsObj, platformIds) => {
     if (!userEmail || !userEmail.includes('@')) return
     try {
-      await fetch(`${WORKER_URL}/vault/save`, {
+      const res = await fetch(`${WORKER_URL}/vault/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail },
         body: JSON.stringify({ brief, posts: postsObj, platforms: platformIds }),
       })
+      const data = await res.json()
+      if (data?.id) setCurrentSessionId(data.id) // so auto-posts attach to this session
     } catch(err) { console.warn('Vault save failed:', err) }
+  }
+
+  const loadSignal = async (sessionId) => {
+    if (!sessionId || !userEmail) return
+    setSignalLoading(true); setSignal(null)
+    try {
+      const res = await fetch(`${WORKER_URL}/signal/${encodeURIComponent(sessionId)}`, {
+        headers: { 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail },
+      })
+      setSignal(await res.json())
+    } catch(err) { setSignal({ error: 'Failed to load signal.' }) }
+    setSignalLoading(false)
   }
 
   const useAsTemplate = (session) => {
@@ -859,7 +877,7 @@ Respond with ONLY the post text.`
       const res = await fetch(`${WORKER_URL}/post/${platformId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail },
-        body: JSON.stringify(bodyMap[platformId] || { text: postText }),
+        body: JSON.stringify({ ...(bodyMap[platformId] || { text: postText }), sessionId: currentSessionId || undefined }),
       })
       const data = await res.json()
       if (res.status === 429) {
@@ -1168,7 +1186,7 @@ Respond with ONLY the post text.`
               {/* Session detail */}
               {userEmail && userEmail.includes('@') && !vaultLoading && activeSession && (
                 <div style={{ animation: 'fadeIn .25s ease' }}>
-                  <button onClick={() => setActiveSession(null)} style={{ ...btn(false), marginBottom: 16 }}>← All launches</button>
+                  <button onClick={() => { setSignal(null); setActiveSession(null) }} style={{ ...btn(false), marginBottom: 16 }}>← All launches</button>
                   <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '18px 20px', marginBottom: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ minWidth: 0 }}>
@@ -1183,6 +1201,64 @@ Respond with ONLY the post text.`
                       </button>
                     </div>
                   </div>
+
+                  {/* LaunchSignal — only for Launcher sessions with auto-posted content */}
+                  {vault.plan === 'launcher' && activeSession.postedIds && Object.keys(activeSession.postedIds).length > 0 && (
+                    <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px', marginBottom: 20 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: (signal || signalLoading) ? 14 : 0 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>📊 LaunchSignal</div>
+                          <div style={{ fontSize: 11, color: C.text3, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>Engagement across your auto-posted platforms</div>
+                        </div>
+                        <button onClick={() => loadSignal(activeSession.id)} disabled={signalLoading} style={{ ...btn(true, C.amber), fontSize: 12, whiteSpace: 'nowrap', opacity: signalLoading ? .6 : 1 }}>
+                          {signalLoading ? 'Loading…' : signal ? '↻ Refresh' : 'Load Signal'}
+                        </button>
+                      </div>
+
+                      {signal && signal.error && (
+                        <div style={{ fontSize: 13, color: C.red }}>{signal.error}</div>
+                      )}
+
+                      {signal && !signal.error && signal.ready === false && (
+                        <div style={{ fontSize: 13, color: C.amber, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.6 }}>
+                          ⏳ {signal.message || `Signal available in ${signal.hoursRemaining} hours`}<br/>
+                          <span style={{ color: C.text3 }}>Metrics mature 24h after posting.</span>
+                        </div>
+                      )}
+
+                      {signal && !signal.error && signal.ready === true && (
+                        <div>
+                          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                            {signal.platforms?.twitter && (
+                              <div style={{ background: C.bg3, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px' }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6 }}>𝕏 Twitter</div>
+                                {signal.platforms.twitter.error
+                                  ? <div style={{ fontSize: 11, color: C.text3 }}>{signal.platforms.twitter.error}</div>
+                                  : <div style={{ fontSize: 12, color: C.text2, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.7 }}>
+                                      {signal.platforms.twitter.impressions ?? 0} impressions<br/>
+                                      {signal.platforms.twitter.likes ?? 0} likes · {signal.platforms.twitter.retweets ?? 0} RTs
+                                    </div>}
+                              </div>
+                            )}
+                            {signal.platforms?.reddit && (
+                              <div style={{ background: C.bg3, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px' }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6 }}>👾 Reddit</div>
+                                {signal.platforms.reddit.error
+                                  ? <div style={{ fontSize: 11, color: C.text3 }}>{signal.platforms.reddit.error}</div>
+                                  : <div style={{ fontSize: 12, color: C.text2, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.7 }}>
+                                      {signal.platforms.reddit.upvotes ?? 0} upvotes<br/>
+                                      {signal.platforms.reddit.comments ?? 0} comments
+                                    </div>}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 13, color: signal.best ? C.green : C.text3, fontWeight: 600 }}>
+                            {signal.best ? `🏆 Best platform: ${signal.best}` : signal.message}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {Object.entries(activeSession.posts || {}).map(([pid, text]) => {
@@ -1221,7 +1297,7 @@ Respond with ONLY the post text.`
                     {vault.sessions.map(s => {
                       const ids = s.platforms && s.platforms.length ? s.platforms : Object.keys(s.posts || {})
                       return (
-                        <button key={s.id} onClick={() => setActiveSession(s)} style={{
+                        <button key={s.id} onClick={() => { setSignal(null); setActiveSession(s) }} style={{
                           display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textAlign: 'left',
                           background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, cursor: 'pointer', width: '100%',
                         }}>
@@ -1241,6 +1317,9 @@ Respond with ONLY the post text.`
                             ))}
                             {ids.length > 6 && <span style={{ fontSize: 11, color: C.text3, alignSelf: 'center' }}>+{ids.length - 6}</span>}
                           </div>
+                          {vault.plan === 'launcher' && s.postedIds && Object.keys(s.postedIds).length > 0 && (
+                            <span style={{ fontSize: 9, background: '#4ade8022', color: C.green, padding: '2px 6px', borderRadius: 4, border: '1px solid #4ade8044', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>📊 Signal</span>
+                          )}
                           <span style={{ color: C.text3, fontSize: 14, flexShrink: 0 }}>›</span>
                         </button>
                       )
