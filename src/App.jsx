@@ -284,7 +284,7 @@ export default function App() {
   const isMobile = useIsMobile()
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [tab, setTab]             = useState('compose') // compose | results | automate
+  const [tab, setTab]             = useState('compose') // compose | results | vault | automate
   const [userEmail, setUserEmail] = useState('')
   const [usage, setUsage]         = useState({ generationsThisPeriod: 0, generationLimit: 3, generationsRemaining: 3, postsThisPeriod: 0, postLimit: 1, postsRemaining: 1, plan: 'free' })
   const [usageError, setUsageError] = useState('')
@@ -298,6 +298,10 @@ export default function App() {
   const [connectedApis, setConnectedApis] = useState({})
   // Mobile: show post drawer
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // LaunchVault
+  const [vault, setVault]           = useState({ plan: 'free', totalCount: 0, lockedCount: 0, limit: 3, sessions: [] })
+  const [vaultLoading, setVaultLoading] = useState(false)
+  const [activeSession, setActiveSession] = useState(null)
 
   const doneCount = Object.keys(posts).filter(k => posts[k] && !posts[k].startsWith('⏳')).length
 
@@ -339,6 +343,49 @@ export default function App() {
       if (data.checkoutUrl) window.open(data.checkoutUrl, '_blank')
     } catch(e) { console.error(e) }
   }
+
+  // ── LaunchVault ─────────────────────────────────────────────────────────────
+  const loadVault = async (email) => {
+    const e = email || userEmail
+    if (!e || !e.includes('@')) return
+    setVaultLoading(true)
+    try {
+      const res = await fetch(`${WORKER_URL}/vault`, {
+        headers: { 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': e },
+      })
+      if (res.ok) setVault(await res.json())
+    } catch(err) { console.warn('Vault load failed:', err) }
+    setVaultLoading(false)
+  }
+
+  const saveSession = async (brief, postsObj, platformIds) => {
+    if (!userEmail || !userEmail.includes('@')) return
+    try {
+      await fetch(`${WORKER_URL}/vault/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail },
+        body: JSON.stringify({ brief, posts: postsObj, platforms: platformIds }),
+      })
+    } catch(err) { console.warn('Vault save failed:', err) }
+  }
+
+  const useAsTemplate = (session) => {
+    const b = session.brief || {}
+    setForm({
+      productName: b.productName || '', tagline: b.tagline || '', url: b.url || '',
+      pricing: b.pricing || '', problem: b.problem || '', solution: b.solution || '',
+      audience: b.audience || '', techStack: b.techStack || '', tone: b.tone || 'Excited',
+    })
+    if (Array.isArray(session.platforms) && session.platforms.length) setSelectedIds(session.platforms)
+    setActiveSession(null)
+    setTab('compose')
+  }
+
+  // Refresh vault whenever the Vault tab opens
+  useEffect(() => {
+    if (tab === 'vault') { setActiveSession(null); loadVault() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
 
   // ── Generate ──────────────────────────────────────────────────────────────
   const generatePosts = async () => {
@@ -399,6 +446,11 @@ Respond ONLY with valid JSON:
       setPosts(parsed)
       setActivePlatform(platforms[0]?.id)
       if (isMobile) setDrawerOpen(true)
+      // Save the session to LaunchVault (fire-and-forget)
+      const cleanPosts = Object.fromEntries(
+        Object.entries(parsed).filter(([k, v]) => k !== '_error' && typeof v === 'string' && !v.startsWith('⏳'))
+      )
+      if (Object.keys(cleanPosts).length) saveSession({ ...form }, cleanPosts, platforms.map(p => p.id))
     } catch(e) {
       setPosts({ _error: 'Generation failed. Please try again.' })
     }
@@ -495,6 +547,7 @@ Respond with ONLY the post text.`
           {[
             ['compose', isMobile ? '✍' : '✍ Compose'],
             ['results', isMobile ? `📄${doneCount > 0 ? doneCount : ''}` : `📄 Posts${doneCount > 0 ? ` (${doneCount})` : ''}${loading ? ' ⏳' : ''}`],
+            ['vault', isMobile ? '🗄' : '🗄 Vault'],
             ['automate', isMobile ? '⚡' : '⚡ Automate'],
           ].map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)} style={{
@@ -679,6 +732,156 @@ Respond with ONLY the post text.`
                   <div style={{ color: C.text3, fontSize: 14 }}>No posts yet — go to Compose to generate</div>
                   <button onClick={() => setTab('compose')} style={{ ...btn(false), marginTop: 8 }}>← Back to Compose</button>
                 </div>
+              )}
+
+              <div style={{ height: `calc(20px + var(--sab))` }} />
+            </div>
+          </div>
+        )}
+
+        {/* ══ VAULT TAB ══ */}
+        {tab === 'vault' && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '20px 16px' : '32px 40px' }}>
+            <div style={{ maxWidth: 720, margin: '0 auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 12 }}>
+                <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: isMobile ? 24 : 28, fontWeight: 400 }}>
+                  {activeSession ? 'Saved launch' : 'Vault'}
+                </h2>
+                <span style={{ fontSize: 11, color: C.text3, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {vault.plan === 'launcher' ? '∞ unlimited history' : `last ${vault.limit} sessions`}
+                </span>
+              </div>
+              <p style={{ color: C.text2, fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
+                {activeSession ? 'Every post from this generation. Copy any, or reuse the brief as a template.'
+                  : 'Every brief you generate is saved here. Reopen, copy, or reuse as a template.'}
+              </p>
+
+              {/* No email */}
+              {(!userEmail || !userEmail.includes('@')) && (
+                <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, padding: '20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, opacity: .3, marginBottom: 10 }}>🗄</div>
+                  <div style={{ color: C.text2, fontSize: 14, marginBottom: 12 }}>Enter your email on the Compose tab to track and save your launches.</div>
+                  <button onClick={() => setTab('compose')} style={{ ...btn(false) }}>← Go to Compose</button>
+                </div>
+              )}
+
+              {/* Loading */}
+              {userEmail && userEmail.includes('@') && vaultLoading && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '40px 0' }}>
+                  <div style={{ fontSize: 26, animation: 'spin 2s linear infinite' }}>✦</div>
+                  <div style={{ color: C.text3, fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}>Loading your vault…</div>
+                </div>
+              )}
+
+              {/* Session detail */}
+              {userEmail && userEmail.includes('@') && !vaultLoading && activeSession && (
+                <div style={{ animation: 'fadeIn .25s ease' }}>
+                  <button onClick={() => setActiveSession(null)} style={{ ...btn(false), marginBottom: 16 }}>← All launches</button>
+                  <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '18px 20px', marginBottom: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{activeSession.brief?.productName || 'Untitled'}</div>
+                        {activeSession.brief?.tagline && <div style={{ fontSize: 13, color: C.text2, marginTop: 3 }}>{activeSession.brief.tagline}</div>}
+                        <div style={{ fontSize: 11, color: C.text3, marginTop: 6, fontFamily: "'JetBrains Mono', monospace" }}>
+                          {new Date(activeSession.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                      <button onClick={() => useAsTemplate(activeSession)} style={{ ...btn(true, C.amber), fontSize: 12, whiteSpace: 'nowrap' }}>
+                        ↻ Use as template
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {Object.entries(activeSession.posts || {}).map(([pid, text]) => {
+                      const p = PLATFORMS.find(x => x.id === pid)
+                      return (
+                        <div key={pid} style={{ background: C.bg3, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 18px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                              <span style={{ fontSize: 16 }}>{p?.icon || '•'}</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{p?.name || pid}</span>
+                            </div>
+                            <button onClick={() => copyPost(text)} style={{ ...btn(false, C.green), fontSize: 11, padding: '6px 12px' }}>Copy</button>
+                          </div>
+                          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: "'Instrument Sans', system-ui, sans-serif", fontSize: 13, lineHeight: 1.7, color: '#bbb' }}>
+                            {text}
+                          </pre>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Session list */}
+              {userEmail && userEmail.includes('@') && !vaultLoading && !activeSession && (
+                <>
+                  {vault.sessions.length === 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '40px 0' }}>
+                      <div style={{ fontSize: 32, opacity: .3 }}>🗄</div>
+                      <div style={{ color: C.text3, fontSize: 14 }}>No saved launches yet — generate posts to fill your vault</div>
+                      <button onClick={() => setTab('compose')} style={{ ...btn(false), marginTop: 4 }}>← Back to Compose</button>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {vault.sessions.map(s => {
+                      const ids = s.platforms && s.platforms.length ? s.platforms : Object.keys(s.posts || {})
+                      return (
+                        <button key={s.id} onClick={() => setActiveSession(s)} style={{
+                          display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textAlign: 'left',
+                          background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10, cursor: 'pointer', width: '100%',
+                        }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {s.brief?.productName || 'Untitled'}
+                            </div>
+                            <div style={{ fontSize: 11, color: C.text3, marginTop: 3, fontFamily: "'JetBrains Mono', monospace" }}>
+                              {new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · {ids.length} post{ids.length === 1 ? '' : 's'}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                            {ids.slice(0, 6).map(id => (
+                              <span key={id} style={{ fontSize: 14 }} title={PLATFORMS.find(p => p.id === id)?.name || id}>
+                                {PLATFORMS.find(p => p.id === id)?.icon || '•'}
+                              </span>
+                            ))}
+                            {ids.length > 6 && <span style={{ fontSize: 11, color: C.text3, alignSelf: 'center' }}>+{ids.length - 6}</span>}
+                          </div>
+                          <span style={{ color: C.text3, fontSize: 14, flexShrink: 0 }}>›</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Locked rows + upgrade CTA for free users with more history */}
+                  {vault.plan !== 'launcher' && vault.lockedCount > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      {Array.from({ length: Math.min(vault.lockedCount, 3) }).map((_, i) => (
+                        <div key={i} style={{
+                          display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', marginBottom: 10,
+                          background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 10,
+                          filter: 'blur(1.5px)', opacity: .5, userSelect: 'none', pointerEvents: 'none',
+                        }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: C.text2 }}>████████ Launch</div>
+                            <div style={{ fontSize: 11, color: C.text3, marginTop: 3, fontFamily: "'JetBrains Mono', monospace" }}>•••• · ██ posts</div>
+                          </div>
+                          <span style={{ fontSize: 14 }}>🔒</span>
+                        </div>
+                      ))}
+                      <div style={{ background: '#f5a62308', border: `1px solid ${C.amber}33`, borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: 13, color: C.text2, lineHeight: 1.5 }}>
+                          🔒 {vault.lockedCount} older launch{vault.lockedCount === 1 ? '' : 'es'} hidden — free keeps your last {vault.limit}.
+                        </div>
+                        <button onClick={handleUpgrade} style={{ ...btn(true, C.amber), fontSize: 12, whiteSpace: 'nowrap' }}>
+                          Upgrade for full history →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               <div style={{ height: `calc(20px + var(--sab))` }} />
