@@ -67,6 +67,56 @@ One-pager means one page — ruthlessly concise.
 The goal: reader understands the product, believes in the founder, and wants to learn more.
 Respond with ONLY the HTML. Clean, print-ready formatting. No markdown fences.`
 
+// ─── PostFlow (local service business mode) ────────────────────────────────────
+const FREE_POSTFLOW_PLATFORM_IDS = ['instagram', 'facebook', 'tiktok', 'nextdoor', 'googlebusiness']
+
+const POSTFLOW_PLATFORMS = [
+  { id:'instagram',      name:'Instagram',       cat:'Social', icon:'📸', color:'#E1306C', api:false, url:'https://www.instagram.com',  desc:"Visual caption for Instagram. 125-150 words max. Emoji-forward. End with 3-5 relevant hashtags (mix broad + local + niche: #braidstyles #charlottebraider #knotlessboxbraids). Strong hook on line 1. Booking link prominent. Call to action: 'Link in bio to book' or direct URL." },
+  { id:'facebook',       name:'Facebook',        cat:'Social', icon:'👥', color:'#1877F2', api:false, url:'https://www.facebook.com',   desc:"Facebook post for local community. Conversational, warm, neighborhood tone. 100-200 words. No hashtag overload — 2-3 max. Tag your city if relevant. End with direct booking link as a full URL (Facebook makes it clickable). Include a question to drive comments." },
+  { id:'tiktok',         name:'TikTok',          cat:'Social', icon:'🎵', color:'#000000', api:false, url:'https://www.tiktok.com',     desc:"TikTok video caption. Under 150 chars for the caption itself. Hook must be in the first line — this is what shows before 'more'. Energy: high, authentic, trending. 3-5 hashtags. End with 'Link in bio to book'. The caption supports a video — write as if the viewer just watched your transformation video." },
+  { id:'nextdoor',       name:'Nextdoor',        cat:'Local',  icon:'🏘️', color:'#00B246', api:false, url:'https://nextdoor.com',       desc:"Nextdoor neighborhood post. Hyperlocal tone — speak to your neighbors directly. 'Hi neighbors!' opener. Mention your specific neighborhood or area. No hashtags. Conversational, trust-building. End with phone number or booking link. Nextdoor users value local recommendations — sound like a neighbor, not an ad." },
+  { id:'googlebusiness', name:'Google Business', cat:'Local',  icon:'🔍', color:'#4285F4', api:false, url:'https://business.google.com', desc:"Google Business post (shown in Google Maps and search results). 100-300 words. Professional, keyword-rich for local SEO. Include service name + city naturally (e.g. 'knotless box braids in Charlotte'). Clear CTA with booking link. No emojis — Google Business is a professional directory." },
+  // Launcher-unlocked PostFlow platforms
+  { id:'whatsapp_broadcast', name:'WhatsApp Broadcast', cat:'Messaging',  icon:'💬', color:'#25D366', api:false, url:'https://web.whatsapp.com',    desc:"WhatsApp broadcast message to existing clients. Short, personal, friendly — like texting a regular. 1-2 short paragraphs. Lead with the offer or news. End with the booking link. No hashtags. Feels one-to-one." },
+  { id:'pinterest',          name:'Pinterest',          cat:'Discovery',  icon:'📌', color:'#E60023', api:false, url:'https://www.pinterest.com',   desc:"Pinterest pin description. Keyword-rich and searchable (style names, service, city). Inspirational tone. 2-4 sentences. 3-5 hashtags. Include the booking link. Written to support a portfolio image." },
+  { id:'threads',            name:'Threads',            cat:'Social',     icon:'@',  color:'#000000', api:false, url:'https://www.threads.net',     desc:"Threads post. Casual, conversational, punchy. Under 500 chars. 1-2 hashtags max. Hook first line. End with booking link or 'link in bio'." },
+  { id:'yelp',               name:'Yelp',               cat:'Local',      icon:'⭐', color:'#FF1A1A', api:false, url:'https://biz.yelp.com',        desc:"Yelp business update post. Professional, factual, trust-building. Highlight services and what makes you different. Mention city + service for local search. Include booking link. No emojis or hashtags." },
+  { id:'linkedin_local',     name:'LinkedIn',           cat:'Professional', icon:'💼', color:'#0A66C2', api:false, url:'https://www.linkedin.com', desc:"LinkedIn post for a local service professional. Professional but personal. Share expertise or a client win. Short paragraphs. 1-2 hashtags. End with booking link. Builds authority in your trade." },
+  { id:'twitter_local',      name:'X / Twitter',        cat:'Social',     icon:'𝕏',  color:'#1a1a1a', api:false, url:'https://twitter.com',         desc:"Short local-business tweet under 280 chars. Friendly, direct. Lead with the offer or service. 1-2 local hashtags. End with the booking link." },
+]
+
+const POSTFLOW_TONES = ['Welcoming', 'Professional', 'Community', 'Excited']
+
+const POSTFLOW_SYSTEM_PROMPT = `You are an expert social media marketer for local service businesses.
+You understand the culture and expectations of each local platform.
+You write as the business owner would — warm, authentic, community-first.
+You never use corporate language. You never sound like an ad.
+CRITICAL RULES:
+- The booking link MUST appear in every single post — it is the #1 conversion element
+- Instagram: visual language, emojis, hashtags, "link in bio"
+- Facebook: conversational, neighborhood warmth, full URL
+- TikTok: high energy, assumes viewer just watched a video, "link in bio"
+- Nextdoor: neighbor-to-neighbor tone, mention location, no hashtags
+- Google Business: professional, SEO-aware, include city + service name naturally
+- Always respond with valid JSON only — no markdown fences, no preamble`
+
+// Detect the booking platform and return the appropriate CTA phrasing.
+function bookingCTA(url) {
+  if (!url) return 'Book here → [your booking link]'
+  const u = url.toLowerCase()
+  if (u.includes('booksy'))        return `Book your appointment → ${url}`
+  if (u.includes('square'))        return `Book online → ${url}`
+  if (u.includes('calendly'))      return `Schedule your session → ${url}`
+  if (u.includes('acuity'))        return `Book now → ${url}`
+  if (u.includes('glossgenius'))   return `Book with me → ${url}`
+  if (u.includes('instagram.com')) return 'Link in bio 👆'
+  return `Book here → ${url}`
+}
+
+// Combined lookup so Results/Vault can resolve platforms from either mode.
+const ALL_PLATFORMS = [...PLATFORMS, ...POSTFLOW_PLATFORMS]
+const findPlatform = (id) => ALL_PLATFORMS.find(p => p.id === id)
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const C = {
   // Colors
@@ -162,10 +212,10 @@ function UsageBar({ usage, userEmail, setUserEmail, loadUsage, usageError, onUpg
   )
 }
 
-function PlatformGrid({ plan, selectedIds, onToggle, onUpgrade }) {
+function PlatformGrid({ plan, selectedIds, onToggle, onUpgrade, allPlatforms = PLATFORMS, freeIds = FREE_PLATFORM_IDS }) {
   const isMobile = useIsMobile()
-  const freePlatforms = FREE_PLATFORM_IDS.map(id => PLATFORMS.find(p => p.id === id)).filter(Boolean)
-  const lockedPlatforms = PLATFORMS.filter(p => !FREE_PLATFORM_IDS.includes(p.id))
+  const freePlatforms = freeIds.map(id => allPlatforms.find(p => p.id === id)).filter(Boolean)
+  const lockedPlatforms = allPlatforms.filter(p => !freeIds.includes(p.id))
 
   if (plan !== 'launcher') {
     return (
@@ -175,7 +225,7 @@ function PlatformGrid({ plan, selectedIds, onToggle, onUpgrade }) {
             Platforms — Free tier
           </label>
           <button onClick={onUpgrade} style={{ background: 'none', border: 'none', color: C.amber, cursor: 'pointer', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", textDecoration: 'underline', padding: 0 }}>
-            Upgrade for all 18+ →
+            Upgrade for all {allPlatforms.length} →
           </button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 6, marginBottom: 8 }}>
@@ -216,7 +266,7 @@ function PlatformGrid({ plan, selectedIds, onToggle, onUpgrade }) {
         Platforms ({selectedIds.length} selected)
       </label>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
-        {PLATFORMS.map(p => {
+        {allPlatforms.map(p => {
           const sel = selectedIds.includes(p.id)
           return (
             <button key={p.id} onClick={() => onToggle(p.id)} style={{
@@ -332,6 +382,10 @@ export default function App() {
   const [usageError, setUsageError] = useState('')
   const [form, setForm]           = useState({ productName: '', tagline: '', url: '', pricing: '', problem: '', solution: '', audience: '', techStack: '', tone: 'Excited' })
   const [selectedIds, setSelectedIds] = useState(FREE_PLATFORM_IDS)
+  // PostFlow (local service business mode)
+  const [mode, setMode]           = useState('launch') // 'launch' | 'postflow'
+  const [pfForm, setPfForm]       = useState({ businessName: '', serviceType: '', differentiation: '', location: '', priceRange: '', promotion: '', bookingLink: '', tone: 'Welcoming' })
+  const [pfSelectedIds, setPfSelectedIds] = useState(FREE_POSTFLOW_PLATFORM_IDS)
   const [posts, setPosts]         = useState({})
   const [activePlatform, setActivePlatform] = useState(null)
   const [loading, setLoading]     = useState(false)
@@ -425,13 +479,13 @@ export default function App() {
     setVaultLoading(false)
   }
 
-  const saveSession = async (brief, postsObj, platformIds) => {
+  const saveSession = async (brief, postsObj, platformIds, sessionMode = 'launch') => {
     if (!userEmail || !userEmail.includes('@')) return
     try {
       const res = await fetch(`${WORKER_URL}/vault/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail },
-        body: JSON.stringify({ brief, posts: postsObj, platforms: platformIds }),
+        body: JSON.stringify({ brief, posts: postsObj, platforms: platformIds, mode: sessionMode }),
       })
       const data = await res.json()
       if (data?.id) setCurrentSessionId(data.id) // so auto-posts attach to this session
@@ -452,13 +506,25 @@ export default function App() {
 
   const useAsTemplate = (session) => {
     const b = session.brief || {}
-    setForm({
-      productName: b.productName || '', tagline: b.tagline || '', url: b.url || '',
-      pricing: b.pricing || '', problem: b.problem || '', solution: b.solution || '',
-      audience: b.audience || '', techStack: b.techStack || '', tone: b.tone || 'Excited',
-    })
-    if (Array.isArray(session.platforms) && session.platforms.length) setSelectedIds(session.platforms)
+    if (session.mode === 'postflow') {
+      setMode('postflow')
+      setPfForm({
+        businessName: b.businessName || '', serviceType: b.serviceType || '', differentiation: b.differentiation || '',
+        location: b.location || '', priceRange: b.priceRange || '', promotion: b.promotion || '',
+        bookingLink: b.bookingLink || '', tone: b.tone || 'Welcoming',
+      })
+      if (Array.isArray(session.platforms) && session.platforms.length) setPfSelectedIds(session.platforms)
+    } else {
+      setMode('launch')
+      setForm({
+        productName: b.productName || '', tagline: b.tagline || '', url: b.url || '',
+        pricing: b.pricing || '', problem: b.problem || '', solution: b.solution || '',
+        audience: b.audience || '', techStack: b.techStack || '', tone: b.tone || 'Excited',
+      })
+      if (Array.isArray(session.platforms) && session.platforms.length) setSelectedIds(session.platforms)
+    }
     setActiveSession(null)
+    setSignal(null)
     setTab('compose')
   }
 
@@ -821,11 +887,99 @@ Respond ONLY with valid JSON:
       const cleanPosts = Object.fromEntries(
         Object.entries(parsed).filter(([k, v]) => k !== '_error' && typeof v === 'string' && !v.startsWith('⏳'))
       )
-      if (Object.keys(cleanPosts).length) saveSession({ ...form }, cleanPosts, platforms.map(p => p.id))
+      if (Object.keys(cleanPosts).length) saveSession({ ...form }, cleanPosts, platforms.map(p => p.id), 'launch')
     } catch(e) {
       setPosts({ _error: 'Generation failed. Please try again.' })
     }
     setLoading(false)
+  }
+
+  // ── PostFlow generation ─────────────────────────────────────────────────────
+  const generatePostFlow = async () => {
+    if (!pfForm.businessName || !pfForm.serviceType || !pfForm.differentiation || !pfForm.bookingLink) return
+    setUsageError('')
+    const allowed = await checkGenerationGate() // same 3-session free gate as Launcher
+    if (!allowed) return
+
+    const platforms = usage.plan === 'free'
+      ? FREE_POSTFLOW_PLATFORM_IDS.map(id => POSTFLOW_PLATFORMS.find(p => p.id === id)).filter(Boolean)
+      : POSTFLOW_PLATFORMS.filter(p => pfSelectedIds.includes(p.id))
+
+    setLoading(true)
+    setResultMode('postflow')
+    setTab('results')
+    setPosts({})
+    setActivePlatform(null)
+
+    const cta = bookingCTA(pfForm.bookingLink)
+    const userPrompt = `Generate platform-native posts for this local service business.
+
+Business:
+- Name: ${pfForm.businessName}
+- Service type: ${pfForm.serviceType}
+- What makes them different: ${pfForm.differentiation}
+- Location/service area: ${pfForm.location || 'N/A'}
+- Price range: ${pfForm.priceRange || 'N/A'}
+- Current promotion: ${pfForm.promotion || 'N/A'}
+- Booking link: ${pfForm.bookingLink || 'N/A'} ← MUST include in every post
+- Tone: ${pfForm.tone}
+
+Booking CTA style (use this phrasing for the call to action): "${cta}"
+
+Platform style guides:
+${platforms.map(p => `- ${p.name}: ${p.desc}`).join('\n')}
+
+CRITICAL: The booking link must appear in every single post.
+Respond with valid JSON only: {${platforms.map(p => `"${p.id}":"post here"`).join(',')}}`
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: [{ type: 'text', text: POSTFLOW_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      })
+      const data = await res.json()
+      const text  = data.content?.map(c => c.text || '').join('') || ''
+      const clean = text.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+      setPosts(parsed)
+      setActivePlatform(platforms[0]?.id)
+      if (isMobile) setDrawerOpen(true)
+      const cleanPosts = Object.fromEntries(
+        Object.entries(parsed).filter(([k, v]) => k !== '_error' && typeof v === 'string' && !v.startsWith('⏳'))
+      )
+      if (Object.keys(cleanPosts).length) saveSession({ ...pfForm }, cleanPosts, platforms.map(p => p.id), 'postflow')
+    } catch(e) {
+      setPosts({ _error: 'Generation failed. Please try again.' })
+    }
+    setLoading(false)
+  }
+
+  const regenPostFlowOne = async (platform) => {
+    if (!platform) return
+    setPosts(prev => ({ ...prev, [platform.id]: '⏳ Regenerating…' }))
+    const cta = bookingCTA(pfForm.bookingLink)
+    const prompt = `Write a single ${platform.name} post for a local service business. Style: ${platform.desc}
+Business: ${pfForm.businessName}. Service: ${pfForm.serviceType}. Different: ${pfForm.differentiation}. Location: ${pfForm.location}. Price: ${pfForm.priceRange}. Promo: ${pfForm.promotion}. Tone: ${pfForm.tone}.
+The booking link MUST appear in the post. Booking CTA style: "${cta}"
+Respond with ONLY the post text.`
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
+      })
+      const data = await res.json()
+      const t = data.content?.map(c => c.text || '').join('') || ''
+      setPosts(prev => ({ ...prev, [platform.id]: t.trim() }))
+    } catch {
+      setPosts(prev => ({ ...prev, [platform.id]: 'Error regenerating.' }))
+    }
   }
 
   const regenOne = async (platform) => {
@@ -894,12 +1048,16 @@ Respond with ONLY the post text.`
 
   // ── Platform list for results sidebar ─────────────────────────────────────
   const resultPlatforms = resultMode === 'thread'
-    ? [...THREAD_CORE_IDS, ...(posts.hackernews ? ['hackernews'] : [])].map(id => PLATFORMS.find(p => p.id === id)).filter(Boolean)
-    : usage.plan === 'free'
-      ? FREE_PLATFORM_IDS.map(id => PLATFORMS.find(p => p.id === id)).filter(Boolean)
-      : PLATFORMS.filter(p => selectedIds.includes(p.id))
+    ? [...THREAD_CORE_IDS, ...(posts.hackernews ? ['hackernews'] : [])].map(id => findPlatform(id)).filter(Boolean)
+    : resultMode === 'postflow'
+      ? (usage.plan === 'free'
+          ? FREE_POSTFLOW_PLATFORM_IDS.map(id => findPlatform(id)).filter(Boolean)
+          : POSTFLOW_PLATFORMS.filter(p => pfSelectedIds.includes(p.id)))
+      : usage.plan === 'free'
+        ? FREE_PLATFORM_IDS.map(id => findPlatform(id)).filter(Boolean)
+        : PLATFORMS.filter(p => selectedIds.includes(p.id))
 
-  const activePlatformData = PLATFORMS.find(p => p.id === activePlatform)
+  const activePlatformData = findPlatform(activePlatform)
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -914,7 +1072,7 @@ Respond with ONLY the post text.`
         <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#f5a623,#e8472a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 900, flexShrink: 0 }}>✦</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, letterSpacing: '-.3px', fontFamily: "'DM Serif Display', serif" }}>CraftLauncher</div>
-          {!isMobile && <div style={{ fontSize: 10, color: C.text3, letterSpacing: '1px', textTransform: 'uppercase', fontFamily: "'JetBrains Mono', monospace" }}>More platforms. Less writing.</div>}
+          {!isMobile && <div style={{ fontSize: 10, color: C.text3, letterSpacing: '1px', textTransform: 'uppercase', fontFamily: "'JetBrains Mono', monospace" }}>{mode === 'postflow' ? 'Your services. Every platform.' : 'More platforms. Less writing.'}</div>}
         </div>
         <nav style={{ display: 'flex', gap: isMobile ? 4 : 8 }}>
           {[
@@ -941,21 +1099,45 @@ Respond with ONLY the post text.`
         {tab === 'compose' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '20px 16px' : '32px 40px' }}>
             <div style={{ maxWidth: 720, margin: '0 auto' }}>
-              <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: isMobile ? 28 : 36, fontWeight: 400, lineHeight: 1.1, marginBottom: 6, letterSpacing: '-.5px' }}>
-                One brief.<br/><span style={{ color: C.amber }}>
-                  {usage.plan === 'free' ? '5 platforms free.' : `${PLATFORMS.length} platforms.`}
-                </span>
-              </h1>
-              <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
-                {usage.plan === 'free'
-                  ? 'Describe your product once. Get tailored posts for 5 top communities. Upgrade for all 18+.'
-                  : 'Describe your product once. Get tailored posts for every community.'}
-              </p>
+              {/* Mode selector */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                {[
+                  ['launch',   '🚀 Product Launch'],
+                  ['postflow', '💈 PostFlow'],
+                ].map(([m, label]) => (
+                  <button key={m} onClick={() => setMode(m)} style={{ ...btn(mode === m), borderRadius: 20, padding: '8px 18px', minHeight: 38, fontSize: 13 }}>{label}</button>
+                ))}
+              </div>
+
+              {mode === 'launch' ? (
+                <>
+                  <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: isMobile ? 28 : 36, fontWeight: 400, lineHeight: 1.1, marginBottom: 6, letterSpacing: '-.5px' }}>
+                    One brief.<br/><span style={{ color: C.amber }}>
+                      {usage.plan === 'free' ? '5 platforms free.' : `${PLATFORMS.length} platforms.`}
+                    </span>
+                  </h1>
+                  <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+                    {usage.plan === 'free'
+                      ? 'Describe your product once. Get tailored posts for 5 top communities. Upgrade for all 18+.'
+                      : 'Describe your product once. Get tailored posts for every community.'}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: isMobile ? 28 : 36, fontWeight: 400, lineHeight: 1.1, marginBottom: 6, letterSpacing: '-.5px' }}>
+                    Your services.<br/><span style={{ color: C.amber }}>Every platform.</span>
+                  </h1>
+                  <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+                    Tell people about your services. Send them to your booking page.
+                  </p>
+                </>
+              )}
 
               <UsageBar usage={usage} userEmail={userEmail} setUserEmail={setUserEmail} loadUsage={loadUsage} usageError={usageError} onUpgrade={handleUpgrade} />
 
               {/* Form fields */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {mode === 'launch' && (<>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
                   {[
                     ['productName', 'Product Name *', 'e.g. RealityDB', false],
@@ -1042,6 +1224,75 @@ Respond with ONLY the post text.`
                   Generate {usage.plan === 'free' ? '5' : selectedIds.length} Posts ✦
                   {usage.plan === 'free' && <span style={{ fontSize: 11, marginLeft: 8, opacity: .7 }}>({usage.generationsRemaining ?? 3} sessions left)</span>}
                 </button>
+                </>)}
+
+                {/* ── PostFlow form ── */}
+                {mode === 'postflow' && (<>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}>Business Name *</label>
+                    <input value={pfForm.businessName} onChange={e => setPfForm(f => ({ ...f, businessName: e.target.value }))} placeholder="Keisha's Knotless Studio" style={input} />
+                  </div>
+                  {[
+                    ['serviceType',     'Service Type *',             'Knotless box braids, locs, twists, protective styles', 2],
+                    ['differentiation', 'What Makes You Different *', '10+ years experience, gentle on natural hair, no shedding products', 2],
+                  ].map(([k, label, ph, rows]) => (
+                    <div key={k}>
+                      <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}>{label}</label>
+                      <textarea value={pfForm[k]} onChange={e => setPfForm(f => ({ ...f, [k]: e.target.value }))} placeholder={ph} rows={rows} style={{ ...input, resize: 'vertical' }} />
+                    </div>
+                  ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                    {[
+                      ['location',   'Location / Service Area', 'Charlotte, NC — also mobile in Mecklenburg County'],
+                      ['priceRange', 'Price Range',             'Box braids from $150 · Locs from $200'],
+                    ].map(([k, label, ph]) => (
+                      <div key={k}>
+                        <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}>{label}</label>
+                        <input value={pfForm[k]} onChange={e => setPfForm(f => ({ ...f, [k]: e.target.value }))} placeholder={ph} style={input} />
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}>Current Promotion</label>
+                    <input value={pfForm.promotion} onChange={e => setPfForm(f => ({ ...f, promotion: e.target.value }))} placeholder="Book before July 4th — 15% off first visit" style={input} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}>Booking Link *</label>
+                    <input value={pfForm.bookingLink} onChange={e => setPfForm(f => ({ ...f, bookingLink: e.target.value }))} placeholder="https://booksy.com/en-us/your-profile OR square link OR calendly" style={input} />
+                    {pfForm.bookingLink && (
+                      <div style={{ fontSize: 11, color: C.amber, marginTop: 6, fontFamily: "'JetBrains Mono', monospace" }}>↳ CTA: {bookingCTA(pfForm.bookingLink)}</div>
+                    )}
+                  </div>
+
+                  {/* Tone */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>Tone</label>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {POSTFLOW_TONES.map(t => (
+                        <button key={t} onClick={() => setPfForm(f => ({ ...f, tone: t }))} style={{ ...btn(pfForm.tone === t), borderRadius: 20, padding: '6px 16px', minHeight: 36 }}>{t}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Platforms */}
+                  <PlatformGrid plan={usage.plan} selectedIds={pfSelectedIds} onToggle={id => setPfSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])} onUpgrade={handleUpgrade} allPlatforms={POSTFLOW_PLATFORMS} freeIds={FREE_POSTFLOW_PLATFORM_IDS} />
+
+                  {/* Generate */}
+                  <button
+                    onClick={generatePostFlow}
+                    disabled={!pfForm.businessName || !pfForm.serviceType || !pfForm.differentiation || !pfForm.bookingLink}
+                    style={{
+                      width: '100%', padding: '16px', borderRadius: 10, border: 'none',
+                      background: 'linear-gradient(135deg,#f5a623,#e8472a)', color: '#080808',
+                      fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '-.3px',
+                      opacity: (!pfForm.businessName || !pfForm.serviceType || !pfForm.differentiation || !pfForm.bookingLink) ? .4 : 1,
+                      minHeight: 52, fontFamily: "'Instrument Sans', system-ui, sans-serif",
+                    }}
+                  >
+                    Generate {usage.plan === 'free' ? '5' : pfSelectedIds.length} Posts 💈
+                    {usage.plan === 'free' && <span style={{ fontSize: 11, marginLeft: 8, opacity: .7 }}>({usage.generationsRemaining ?? 3} sessions left)</span>}
+                  </button>
+                </>)}
               </div>
 
               {/* Bottom safe area */}
@@ -1089,7 +1340,7 @@ Respond with ONLY the post text.`
                   <div style={{ fontSize: 32, animation: 'spin 2s linear infinite' }}>✦</div>
                   <div style={{ color: C.text, fontSize: 15, fontWeight: 600 }}>Crafting platform-native posts…</div>
                   <div style={{ color: C.text3, fontSize: 12, textAlign: 'center', maxWidth: 280, lineHeight: 1.6, fontFamily: "'JetBrains Mono', monospace" }}>
-                    Generating {resultMode === 'thread' ? `${resultPlatforms.length} build-in-public` : usage.plan === 'free' ? 5 : selectedIds.length} tailored posts.<br/>
+                    Generating {resultPlatforms.length}{resultMode === 'thread' ? ' build-in-public' : ''} tailored posts.<br/>
                     Usually 10–20 seconds.
                   </div>
                 </div>
@@ -1122,16 +1373,16 @@ Respond with ONLY the post text.`
                   platform={activePlatformData}
                   post={posts[activePlatform]}
                   onCopy={copyPost}
-                  onRegen={() => (resultMode === 'thread' ? regenThreadOne(activePlatformData) : regenOne(activePlatformData))}
+                  onRegen={() => (resultMode === 'thread' ? regenThreadOne(activePlatformData) : resultMode === 'postflow' ? regenPostFlowOne(activePlatformData) : regenOne(activePlatformData))}
                   onAutoPost={autoPost}
                   postStatus={postStatus[activePlatform]}
                   copied={copied}
                   connectedApis={connectedApis}
                   plan={usage.plan}
                   onConnect={() => setTab('automate')}
-                  onLaunchKit={resultMode === 'thread' ? undefined : generateLaunchKit}
+                  onLaunchKit={resultMode === 'compose' ? generateLaunchKit : undefined}
                   launchKitLoading={lkLoading}
-                  onLaunchDeck={resultMode === 'thread' ? undefined : generateLaunchDeck}
+                  onLaunchDeck={resultMode === 'compose' ? generateLaunchDeck : undefined}
                   launchDeckLoading={ldLoading}
                 />
               )}
@@ -1190,7 +1441,10 @@ Respond with ONLY the post text.`
                   <div style={{ background: C.bg2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '18px 20px', marginBottom: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{activeSession.brief?.productName || 'Untitled'}</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>
+                          {activeSession.mode === 'postflow' ? '💈 ' : '🚀 '}
+                          {(activeSession.mode === 'postflow' ? activeSession.brief?.businessName : activeSession.brief?.productName) || 'Untitled'}
+                        </div>
                         {activeSession.brief?.tagline && <div style={{ fontSize: 13, color: C.text2, marginTop: 3 }}>{activeSession.brief.tagline}</div>}
                         <div style={{ fontSize: 11, color: C.text3, marginTop: 6, fontFamily: "'JetBrains Mono', monospace" }}>
                           {new Date(activeSession.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1262,7 +1516,7 @@ Respond with ONLY the post text.`
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {Object.entries(activeSession.posts || {}).map(([pid, text]) => {
-                      const p = PLATFORMS.find(x => x.id === pid)
+                      const p = findPlatform(pid)
                       return (
                         <div key={pid} style={{ background: C.bg3, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 18px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 10 }}>
@@ -1303,7 +1557,8 @@ Respond with ONLY the post text.`
                         }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 14, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {s.brief?.productName || 'Untitled'}
+                              {s.mode === 'postflow' ? '💈 ' : '🚀 '}
+                              {(s.mode === 'postflow' ? s.brief?.businessName : s.brief?.productName) || 'Untitled'}
                             </div>
                             <div style={{ fontSize: 11, color: C.text3, marginTop: 3, fontFamily: "'JetBrains Mono', monospace" }}>
                               {new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · {ids.length} post{ids.length === 1 ? '' : 's'}
@@ -1311,8 +1566,8 @@ Respond with ONLY the post text.`
                           </div>
                           <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
                             {ids.slice(0, 6).map(id => (
-                              <span key={id} style={{ fontSize: 14 }} title={PLATFORMS.find(p => p.id === id)?.name || id}>
-                                {PLATFORMS.find(p => p.id === id)?.icon || '•'}
+                              <span key={id} style={{ fontSize: 14 }} title={findPlatform(id)?.name || id}>
+                                {findPlatform(id)?.icon || '•'}
                               </span>
                             ))}
                             {ids.length > 6 && <span style={{ fontSize: 11, color: C.text3, alignSelf: 'center' }}>+{ids.length - 6}</span>}
