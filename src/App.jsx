@@ -58,6 +58,15 @@ Respond with valid JSON only: {twitter, indiehackers, linkedin, peerlist}`
 // Fixed platform set for Thread (no picker). HN is optional — only rendered if returned.
 const THREAD_CORE_IDS = ['twitter', 'indiehackers', 'linkedin', 'peerlist']
 
+const LAUNCHDECK_SYSTEM_PROMPT = `You are an expert startup advisor who writes investor one-pagers.
+Generate a single-page pitch document for this product.
+Rules: No jargon. No buzzwords. Every sentence earns its place.
+Lead with the problem — make the reader feel it.
+Traction section: if numbers provided, lead with them. If not, be honest about stage.
+One-pager means one page — ruthlessly concise.
+The goal: reader understands the product, believes in the founder, and wants to learn more.
+Respond with ONLY the HTML. Clean, print-ready formatting. No markdown fences.`
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const C = {
   // Colors
@@ -230,7 +239,7 @@ function PlatformGrid({ plan, selectedIds, onToggle, onUpgrade }) {
   )
 }
 
-function PostViewer({ platform, post, onCopy, onRegen, onAutoPost, postStatus, copied, connectedApis, plan, onConnect, onLaunchKit, launchKitLoading }) {
+function PostViewer({ platform, post, onCopy, onRegen, onAutoPost, postStatus, copied, connectedApis, plan, onConnect, onLaunchKit, launchKitLoading, onLaunchDeck, launchDeckLoading }) {
   const isMobile = useIsMobile()
   if (!platform || !post) return null
 
@@ -268,6 +277,12 @@ function PostViewer({ platform, post, onCopy, onRegen, onAutoPost, postStatus, c
           <button onClick={onLaunchKit} disabled={launchKitLoading}
             style={{ ...btn(false, C.amber), fontSize: 12, padding: '8px 14px', opacity: launchKitLoading ? .6 : 1 }}>
             {launchKitLoading ? 'Generating…' : '🎨 LaunchKit'}
+          </button>
+        )}
+        {onLaunchDeck && (
+          <button onClick={onLaunchDeck} disabled={launchDeckLoading}
+            style={{ ...btn(false, C.amber), fontSize: 12, padding: '8px 14px', opacity: launchDeckLoading ? .6 : 1 }}>
+            {launchDeckLoading ? 'Generating…' : '📑 LaunchDeck'}
           </button>
         )}
         {platform.api && plan === 'launcher' && (
@@ -339,6 +354,17 @@ export default function App() {
   const [lkDeployMsg, setLkDeployMsg] = useState('')
   // LaunchThread
   const [threadForm, setThreadForm] = useState({ shipped: '', learned: '', next: '', productName: '', url: '', tone: 'Humble' })
+  // LaunchDeck — traction inputs + modal
+  const [traction, setTraction]     = useState({ mrr: '', users: '', launchDate: '', keyMetric: '', ask: '', founderName: '', twitter: '' })
+  const [tractionOpen, setTractionOpen] = useState(false)
+  const [ldOpen, setLdOpen]         = useState(false)
+  const [ldLoading, setLdLoading]   = useState(false)
+  const [ldGated, setLdGated]       = useState(false)
+  const [ldGateMsg, setLdGateMsg]   = useState('')
+  const [ldHtml, setLdHtml]         = useState('')
+  const [ldMd, setLdMd]             = useState('')
+  const [ldView, setLdView]         = useState('preview') // preview | markdown
+  const [ldError, setLdError]       = useState('')
 
   const doneCount = Object.keys(posts).filter(k => posts[k] && !posts[k].startsWith('⏳')).length
 
@@ -514,6 +540,113 @@ Self-contained: all CSS in one <style> tag, fully mobile-responsive, no JS frame
   }
 
   const closeLaunchKit = () => { setLkOpen(false); setLkHtml(''); setLkGated(false); setLkDeployMsg('') }
+
+  // ── LaunchDeck ──────────────────────────────────────────────────────────────
+  const deckSlug = () => ((form.productName || 'launchdeck').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'launchdeck')
+
+  const generateLaunchDeck = async () => {
+    if (!userEmail || !userEmail.includes('@')) { alert('Enter your email on the Compose tab first.'); return }
+    setLdOpen(true); setLdGated(false); setLdHtml(''); setLdMd(''); setLdError(''); setLdView('preview'); setLdLoading(true)
+    try {
+      // 1. Launcher-only gate (Worker)
+      const gate = await fetch(`${WORKER_URL}/launchdeck/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail },
+        body: JSON.stringify({ brief: form, traction }),
+      })
+      const gateData = await gate.json()
+      if (!gate.ok || !gateData.allowed) {
+        setLdGated(true)
+        setLdGateMsg(gateData.upgradeMessage || 'LaunchDeck is a Launcher feature.')
+        setLdLoading(false)
+        return
+      }
+
+      // 2. Generate the one-pager HTML client-side (constraint #9 — key lives in the artifact env)
+      const hasTraction = traction.mrr || traction.users || traction.keyMetric || traction.launchDate
+      const userPrompt = `Generate a founder-voiced investor one-pager for this product.
+
+Product:
+- Name: ${form.productName}
+- Tagline: ${form.tagline || 'N/A'}
+- URL: ${form.url || 'N/A'}
+- Problem: ${form.problem}
+- Solution: ${form.solution}
+- Audience: ${form.audience || 'N/A'}
+- Tech stack: ${form.techStack || 'N/A'}
+- Pricing / revenue model: ${form.pricing || 'N/A'}
+
+Founder & contact:
+- Founder name: ${traction.founderName || 'N/A'}
+- Email: ${userEmail}
+- Twitter/X: ${traction.twitter || 'N/A'}
+
+Traction (${hasTraction ? 'use these real numbers — lead with them' : 'none provided — be honest about early stage'}):
+- MRR: ${traction.mrr || 'N/A'}
+- Users / signups: ${traction.users || 'N/A'}
+- Launch date: ${traction.launchDate || 'N/A'}
+- Key metric: ${traction.keyMetric || 'N/A'}
+- Ask: ${traction.ask || 'N/A'}
+
+Sections, in this exact order:
+1. Header — product name, tagline, URL, founder name
+2. Problem — 2-3 sentences, specific pain
+3. Solution — what it does, for whom, how it's different
+4. Traction — numbers if provided, otherwise "Early stage, launched ${traction.launchDate || '[date]'}"
+5. Market — who else has this problem (1 paragraph)
+6. Business model — pricing, revenue model
+7. Ask — what you want from the reader${traction.ask ? `: ${traction.ask}` : ' (omit this section if no ask was provided)'}
+8. Contact — email, URL${traction.twitter ? ', Twitter' : ''}
+
+Formatting: clean, print-ready, ONE page. Light background, professional typography, generous whitespace. Self-contained single HTML file — all CSS inline in a <style> tag, no external dependencies.`
+
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: [{ type: 'text', text: LAUNCHDECK_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      })
+      const data = await res.json()
+      const html = (data.content?.map(c => c.text || '').join('') || '').replace(/```html|```/g, '').trim()
+      if (!html) throw new Error('empty')
+      setLdHtml(html)
+
+      // 3. Derive a clean markdown version from the HTML (cheap haiku call, best-effort)
+      try {
+        const mdRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 2000,
+            messages: [{ role: 'user', content: `Convert this investor one-pager into clean Markdown for pasting into a cold email. Preserve every section, heading, and number exactly. Respond with ONLY Markdown — no code fences, no preamble.\n\n${html}` }],
+          }),
+        })
+        const mdData = await mdRes.json()
+        const md = (mdData.content?.map(c => c.text || '').join('') || '').replace(/```markdown|```/g, '').trim()
+        setLdMd(md)
+      } catch { /* markdown is best-effort */ }
+    } catch (e) {
+      setLdError('⚠ One-pager generation failed. Close and try again.')
+    }
+    setLdLoading(false)
+  }
+
+  const downloadDeck = (kind) => {
+    const isMd = kind === 'md'
+    const blob = new Blob([isMd ? ldMd : ldHtml], { type: isMd ? 'text/markdown;charset=utf-8' : 'text/html;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `${deckSlug()}-onepager.${isMd ? 'md' : 'html'}`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const closeLaunchDeck = () => { setLdOpen(false); setLdHtml(''); setLdMd(''); setLdGated(false); setLdError('') }
 
   // ── LaunchThread ────────────────────────────────────────────────────────────
   // Pre-fill product name / URL from the last brief when opening the Thread tab
@@ -840,6 +973,38 @@ Respond with ONLY the post text.`
                   </div>
                 </div>
 
+                {/* Traction (optional — powers LaunchDeck) */}
+                <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, background: C.bg2, overflow: 'hidden' }}>
+                  <button
+                    onClick={() => setTractionOpen(o => !o)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '13px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>📑 Traction <span style={{ fontSize: 11, color: C.text3, fontWeight: 400 }}>— optional, for LaunchDeck</span></div>
+                      <div style={{ fontSize: 11, color: C.text3, marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>Numbers make your investor one-pager land harder.</div>
+                    </div>
+                    <span style={{ fontSize: 13, color: C.text3, transform: tractionOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
+                  </button>
+                  {tractionOpen && (
+                    <div style={{ padding: '0 16px 16px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                      {[
+                        ['mrr',         'MRR ($)',          'e.g. $1,200'],
+                        ['users',       'Users / signups',  'e.g. 340 signups'],
+                        ['launchDate',  'Launch date',      'e.g. May 2026'],
+                        ['keyMetric',   'Key metric',       'e.g. 47% week-over-week growth'],
+                        ['ask',         'Ask (optional)',   'e.g. $50K pre-seed, YC application'],
+                        ['founderName', 'Founder name',     'e.g. Eddy Mkwambe'],
+                        ['twitter',     'Twitter / X',      'e.g. @mathoslab'],
+                      ].map(([k, label, ph]) => (
+                        <div key={k}>
+                          <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 5, fontFamily: "'JetBrains Mono', monospace" }}>{label}</label>
+                          <input value={traction[k]} onChange={e => setTraction(t => ({ ...t, [k]: e.target.value }))} placeholder={ph} style={input} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Platforms */}
                 <PlatformGrid plan={usage.plan} selectedIds={selectedIds} onToggle={id => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])} onUpgrade={handleUpgrade} />
 
@@ -948,6 +1113,8 @@ Respond with ONLY the post text.`
                   onConnect={() => setTab('automate')}
                   onLaunchKit={resultMode === 'thread' ? undefined : generateLaunchKit}
                   launchKitLoading={lkLoading}
+                  onLaunchDeck={resultMode === 'thread' ? undefined : generateLaunchDeck}
+                  launchDeckLoading={ldLoading}
                 />
               )}
 
@@ -1333,6 +1500,105 @@ Respond with ONLY the post text.`
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 28, textAlign: 'center' }}>
                   <div style={{ fontSize: 28, opacity: .4 }}>📄</div>
                   <div style={{ color: C.red, fontSize: 14 }}>{lkDeployMsg}</div>
+                </div>
+              )}
+            </div>
+
+            {!isMobile && <div style={{ height: 'var(--sab)' }} />}
+          </div>
+        </div>
+      )}
+
+      {/* ══ LAUNCHDECK MODAL ══ */}
+      {ldOpen && (
+        <div
+          onClick={closeLaunchDeck}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.72)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: isMobile ? 0 : 24, backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: C.bg2, border: `1px solid ${C.border2}`,
+              borderRadius: isMobile ? 0 : 14, width: '100%', maxWidth: 920,
+              height: isMobile ? '100%' : '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              paddingTop: isMobile ? 'var(--sat)' : 0,
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+              <span style={{ fontSize: 16 }}>📑</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, fontFamily: "'DM Serif Display', serif" }}>LaunchDeck</div>
+                <div style={{ fontSize: 11, color: C.text3, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {ldGated ? 'Launcher feature' : ldLoading ? 'Generating…' : 'Investor one-pager'}
+                </div>
+              </div>
+              <button onClick={closeLaunchDeck} style={{ ...btn(false), fontSize: 13, padding: '6px 12px' }}>✕ Close</button>
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+              {ldLoading && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+                  <div style={{ fontSize: 30, animation: 'spin 2s linear infinite' }}>✦</div>
+                  <div style={{ color: C.text, fontSize: 15, fontWeight: 600 }}>Generating your one-pager…</div>
+                  <div style={{ color: C.text3, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>HTML + markdown. Usually 15–30 seconds.</div>
+                </div>
+              )}
+
+              {!ldLoading && ldGated && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 28, textAlign: 'center' }}>
+                  <div style={{ fontSize: 30 }}>🔒</div>
+                  <div style={{ color: C.text, fontSize: 17, fontWeight: 700, fontFamily: "'DM Serif Display', serif" }}>LaunchDeck is a Launcher feature</div>
+                  <div style={{ color: C.text2, fontSize: 14, lineHeight: 1.6, maxWidth: 420 }}>{ldGateMsg}</div>
+                  <button onClick={() => { closeLaunchDeck(); handleUpgrade() }} style={{
+                    padding: '13px 24px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                    background: 'linear-gradient(135deg,#f5a623,#e8472a)', color: '#080808', fontSize: 14, fontWeight: 700,
+                    fontFamily: "'Instrument Sans', system-ui, sans-serif",
+                  }}>
+                    Upgrade — $9/mo or $149/yr →
+                  </button>
+                </div>
+              )}
+
+              {!ldLoading && !ldGated && ldHtml && (
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: '12px 18px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+                    {/* View toggle */}
+                    <div style={{ display: 'flex', gap: 4, marginRight: 'auto' }}>
+                      <button onClick={() => setLdView('preview')} style={{ ...btn(ldView === 'preview'), fontSize: 12, padding: '7px 12px' }}>Preview</button>
+                      <button onClick={() => setLdView('markdown')} style={{ ...btn(ldView === 'markdown'), fontSize: 12, padding: '7px 12px' }} disabled={!ldMd}>
+                        Markdown{!ldMd ? ' (n/a)' : ''}
+                      </button>
+                    </div>
+                    <button onClick={() => copyPost(ldView === 'markdown' && ldMd ? ldMd : ldHtml)} style={{ ...btn(copied, C.green), fontSize: 12, padding: '7px 12px' }}>
+                      {copied ? 'Copied ✓' : ldView === 'markdown' ? 'Copy MD' : 'Copy HTML'}
+                    </button>
+                    <button onClick={() => downloadDeck('html')} style={{ ...btn(false), fontSize: 12, padding: '7px 12px' }}>⬇ .html</button>
+                    <button onClick={() => downloadDeck('md')} style={{ ...btn(false), fontSize: 12, padding: '7px 12px', opacity: ldMd ? 1 : .5 }} disabled={!ldMd}>⬇ .md</button>
+                  </div>
+                  {ldView === 'preview' ? (
+                    <iframe title="LaunchDeck preview" srcDoc={ldHtml} sandbox=""
+                      style={{ flex: 1, width: '100%', border: 'none', background: '#fff' }} />
+                  ) : (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px' }}>
+                      <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 13, lineHeight: 1.7, color: C.text2 }}>
+                        {ldMd || 'Markdown version unavailable — use the HTML.'}
+                      </pre>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!ldLoading && !ldGated && !ldHtml && ldError && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 28, textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, opacity: .4 }}>📑</div>
+                  <div style={{ color: C.red, fontSize: 14 }}>{ldError}</div>
                 </div>
               )}
             </div>
