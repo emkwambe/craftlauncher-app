@@ -585,9 +585,9 @@ Google Fonts: 'DM Serif Display' (headings), 'Instrument Sans' (body), 'JetBrain
 
 Self-contained: all CSS in one <style> tag, fully mobile-responsive, no JS frameworks, no external dependencies except the Google Fonts <link>.`
 
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch(`${WORKER_URL}/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 8000,
@@ -684,9 +684,9 @@ Sections, in this exact order:
 
 Formatting: clean, print-ready, ONE page. Light background, professional typography, generous whitespace. Self-contained single HTML file — all CSS inline in a <style> tag, no external dependencies.`
 
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch(`${WORKER_URL}/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 4000,
@@ -701,9 +701,9 @@ Formatting: clean, print-ready, ONE page. Light background, professional typogra
 
       // 3. Derive a clean markdown version from the HTML (cheap haiku call, best-effort)
       try {
-        const mdRes = await fetch('https://api.anthropic.com/v1/messages', {
+        const mdRes = await fetch(`${WORKER_URL}/generate`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
           body: JSON.stringify({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 2000,
@@ -777,9 +777,9 @@ Optionally include a "hackernews" key ONLY if there is something genuinely techn
 Respond ONLY with valid JSON: {"twitter":"…","indiehackers":"…","linkedin":"…","peerlist":"…"} plus optional "hackernews".`
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch(`${WORKER_URL}/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 4000,
@@ -810,9 +810,9 @@ Product: ${threadForm.productName || 'N/A'}. URL: ${threadForm.url || 'N/A'}. To
 Style: ${platform.desc}
 Respond with ONLY the post text.`
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch(`${WORKER_URL}/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
       })
       const data = await res.json()
@@ -866,9 +866,9 @@ Respond ONLY with valid JSON:
 {${platforms.map(p => `"${p.id}":"post here"`).join(',')}}`
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch(`${WORKER_URL}/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 4000,
@@ -933,9 +933,9 @@ CRITICAL: The booking link must appear in every single post.
 Respond with valid JSON only: {${platforms.map(p => `"${p.id}":"post here"`).join(',')}}`
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch(`${WORKER_URL}/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 4000,
@@ -969,9 +969,9 @@ Business: ${pfForm.businessName}. Service: ${pfForm.serviceType}. Different: ${p
 The booking link MUST appear in the post. Booking CTA style: "${cta}"
 Respond with ONLY the post text.`
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch(`${WORKER_URL}/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
       })
       const data = await res.json()
@@ -989,9 +989,9 @@ Respond with ONLY the post text.`
 Product: ${form.productName}. ${form.tagline}. Problem: ${form.problem}. Solution: ${form.solution}. Audience: ${form.audience}. Tech: ${form.techStack}. Price: ${form.pricing}. URL: ${form.url}. Tone: ${form.tone}.
 Respond with ONLY the post text.`
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch(`${WORKER_URL}/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail || '' },
         body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
       })
       const data = await res.json()
