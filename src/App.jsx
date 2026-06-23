@@ -38,6 +38,13 @@ CRITICAL RULES:
 - Hacker News titles MUST start with "Show HN:" and be MAXIMUM 80 characters total including spaces. Count every character. Shorten ruthlessly if needed.
 - Always respond with valid JSON only — no markdown fences, no preamble`
 
+const LAUNCHKIT_SYSTEM_PROMPT = `You are an expert conversion copywriter. Generate a complete, deployable HTML landing page for this product.
+The page must follow this structure: [nav, hero, problem, solution, features, pricing, FAQ, footer CTA].
+Use dark theme with CSS variables. The output must be a single self-contained HTML file.
+Focus on converting cold traffic — strangers who arrived from a launch post.
+One primary CTA throughout. No distractions. Persuasion sequence: problem → solution → proof → action.
+Respond with ONLY the HTML. No markdown fences. No preamble.`
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const C = {
   // Colors
@@ -210,7 +217,7 @@ function PlatformGrid({ plan, selectedIds, onToggle, onUpgrade }) {
   )
 }
 
-function PostViewer({ platform, post, onCopy, onRegen, onAutoPost, postStatus, copied, connectedApis, plan, onConnect }) {
+function PostViewer({ platform, post, onCopy, onRegen, onAutoPost, postStatus, copied, connectedApis, plan, onConnect, onLaunchKit, launchKitLoading }) {
   const isMobile = useIsMobile()
   if (!platform || !post) return null
 
@@ -244,6 +251,12 @@ function PostViewer({ platform, post, onCopy, onRegen, onAutoPost, postStatus, c
         <button onClick={() => onCopy(post)} style={{ ...btn(copied, C.green), fontSize: 12, padding: '8px 14px' }}>
           {copied ? 'Copied ✓' : 'Copy'}
         </button>
+        {onLaunchKit && (
+          <button onClick={onLaunchKit} disabled={launchKitLoading}
+            style={{ ...btn(false, C.amber), fontSize: 12, padding: '8px 14px', opacity: launchKitLoading ? .6 : 1 }}>
+            {launchKitLoading ? 'Generating…' : '🎨 LaunchKit'}
+          </button>
+        )}
         {platform.api && plan === 'launcher' && (
           connectedApis[platform.id]
             ? <button onClick={() => onAutoPost(platform.id)} disabled={postStatus === 'posting' || postStatus === 'posted'}
@@ -302,6 +315,14 @@ export default function App() {
   const [vault, setVault]           = useState({ plan: 'free', totalCount: 0, lockedCount: 0, limit: 3, sessions: [] })
   const [vaultLoading, setVaultLoading] = useState(false)
   const [activeSession, setActiveSession] = useState(null)
+  // LaunchKit
+  const [lkOpen, setLkOpen]         = useState(false)
+  const [lkLoading, setLkLoading]   = useState(false)
+  const [lkGated, setLkGated]       = useState(false)
+  const [lkGateMsg, setLkGateMsg]   = useState('')
+  const [lkHtml, setLkHtml]         = useState('')
+  const [lkSlug, setLkSlug]         = useState('')
+  const [lkDeployMsg, setLkDeployMsg] = useState('')
 
   const doneCount = Object.keys(posts).filter(k => posts[k] && !posts[k].startsWith('⏳')).length
 
@@ -386,6 +407,97 @@ export default function App() {
     if (tab === 'vault') { setActiveSession(null); loadVault() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
+
+  // ── LaunchKit ───────────────────────────────────────────────────────────────
+  const generateLaunchKit = async () => {
+    if (!userEmail || !userEmail.includes('@')) { alert('Enter your email on the Compose tab first.'); return }
+    setLkOpen(true); setLkGated(false); setLkHtml(''); setLkDeployMsg(''); setLkLoading(true)
+    try {
+      // 1. Launcher-only gate (Worker)
+      const gate = await fetch(`${WORKER_URL}/launchkit/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-LaunchCraft-Token': LC_TOKEN, 'X-User-Email': userEmail },
+        body: JSON.stringify({ brief: form }),
+      })
+      const gateData = await gate.json()
+      if (!gate.ok || !gateData.allowed) {
+        setLkGated(true)
+        setLkGateMsg(gateData.upgradeMessage || 'LaunchKit is a Launcher feature.')
+        setLkLoading(false)
+        return
+      }
+      setLkSlug(gateData.slug || '')
+
+      // 2. Generate the HTML client-side (same direct Anthropic pattern as generatePosts)
+      const userPrompt = `Generate a complete, single-file HTML landing page for this product.
+
+Product:
+- Name: ${form.productName}
+- Tagline: ${form.tagline || 'N/A'}
+- Problem: ${form.problem}
+- Solution: ${form.solution}
+- Audience: ${form.audience || 'developers and makers'}
+- Tech stack: ${form.techStack || 'N/A'}
+- Pricing: ${form.pricing || 'N/A'}  ← reflect this exactly in the Pricing section
+- URL: ${form.url || '#'}  ← every primary CTA links here
+- Tone: ${form.tone}
+
+Structure, in this exact order:
+1. Nav — product name (left) + primary CTA button (right)
+2. Hero — problem-aware headline, sub-headline, primary CTA → ${form.url || '#'}
+3. Problem — 3 pain points, each with an emoji icon
+4. Solution — how it works in 3 steps
+5. Features — 3–4 feature cards
+6. Pricing — match exactly: ${form.pricing || 'N/A'}
+7. FAQ — 3 objections answered
+8. Footer CTA — final push + link to ${form.url || '#'}
+
+Dark theme — define these as CSS variables in :root:
+--bg:#080808; --bg2:#0f0f0f; --bg3:#141414; --border:#1c1c1c; --text:#e2ddd6; --text2:#8a8680; --amber:#f5a623; --red:#e8472a; --green:#4ade80
+CTA accent gradient: linear-gradient(135deg,#f5a623,#e8472a)
+Google Fonts: 'DM Serif Display' (headings), 'Instrument Sans' (body), 'JetBrains Mono' (labels/eyebrows).
+
+Self-contained: all CSS in one <style> tag, fully mobile-responsive, no JS frameworks, no external dependencies except the Google Fonts <link>.`
+
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 8000,
+          system: [{ type: 'text', text: LAUNCHKIT_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      })
+      const data = await res.json()
+      const text = data.content?.map(c => c.text || '').join('') || ''
+      const html = text.replace(/```html|```/g, '').trim()
+      if (!html) throw new Error('empty')
+      setLkHtml(html)
+    } catch (e) {
+      setLkGated(false)
+      setLkHtml('')
+      setLkGateMsg('')
+      setLkOpen(true)
+      setLkDeployMsg('⚠ Landing page generation failed. Close and try again.')
+    }
+    setLkLoading(false)
+  }
+
+  const downloadLaunchKit = () => {
+    const blob = new Blob([lkHtml], { type: 'text/html;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `${lkSlug || 'landing'}.html`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const deployLaunchKit = () => {
+    setLkDeployMsg(`Auto-deploy is coming soon. For now: download the .html and drop it into Cloudflare Pages — it'll live at craftlauncher.dev/${lkSlug}.`)
+  }
+
+  const closeLaunchKit = () => { setLkOpen(false); setLkHtml(''); setLkGated(false); setLkDeployMsg('') }
 
   // ── Generate ──────────────────────────────────────────────────────────────
   const generatePosts = async () => {
@@ -723,6 +835,8 @@ Respond with ONLY the post text.`
                   connectedApis={connectedApis}
                   plan={usage.plan}
                   onConnect={() => setTab('automate')}
+                  onLaunchKit={generateLaunchKit}
+                  launchKitLoading={lkLoading}
                 />
               )}
 
@@ -946,6 +1060,105 @@ Respond with ONLY the post text.`
           </div>
         )}
       </main>
+
+      {/* ══ LAUNCHKIT MODAL ══ */}
+      {lkOpen && (
+        <div
+          onClick={closeLaunchKit}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.72)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: isMobile ? 0 : 24, backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: C.bg2, border: `1px solid ${C.border2}`,
+              borderRadius: isMobile ? 0 : 14, width: '100%', maxWidth: 920,
+              height: isMobile ? '100%' : '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              paddingTop: isMobile ? 'var(--sat)' : 0,
+            }}
+          >
+            {/* Modal header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+              <span style={{ fontSize: 16 }}>🎨</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, fontFamily: "'DM Serif Display', serif" }}>LaunchKit</div>
+                <div style={{ fontSize: 11, color: C.text3, fontFamily: "'JetBrains Mono', monospace" }}>
+                  {lkGated ? 'Launcher feature' : lkLoading ? 'Generating…' : lkSlug ? `craftlauncher.dev/${lkSlug}` : 'Landing page'}
+                </div>
+              </div>
+              <button onClick={closeLaunchKit} style={{ ...btn(false), fontSize: 13, padding: '6px 12px' }}>✕ Close</button>
+            </div>
+
+            {/* Modal body */}
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+              {/* Loading */}
+              {lkLoading && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+                  <div style={{ fontSize: 30, animation: 'spin 2s linear infinite' }}>✦</div>
+                  <div style={{ color: C.text, fontSize: 15, fontWeight: 600 }}>Generating your landing page…</div>
+                  <div style={{ color: C.text3, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>Usually 15–30 seconds.</div>
+                </div>
+              )}
+
+              {/* Gated (free user) */}
+              {!lkLoading && lkGated && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 28, textAlign: 'center' }}>
+                  <div style={{ fontSize: 30 }}>🔒</div>
+                  <div style={{ color: C.text, fontSize: 17, fontWeight: 700, fontFamily: "'DM Serif Display', serif" }}>LaunchKit is a Launcher feature</div>
+                  <div style={{ color: C.text2, fontSize: 14, lineHeight: 1.6, maxWidth: 420 }}>{lkGateMsg}</div>
+                  <button onClick={() => { closeLaunchKit(); handleUpgrade() }} style={{
+                    padding: '13px 24px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                    background: 'linear-gradient(135deg,#f5a623,#e8472a)', color: '#080808', fontSize: 14, fontWeight: 700,
+                    fontFamily: "'Instrument Sans', system-ui, sans-serif",
+                  }}>
+                    Upgrade — $9/mo or $149/yr →
+                  </button>
+                </div>
+              )}
+
+              {/* Preview + actions */}
+              {!lkLoading && !lkGated && lkHtml && (
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '12px 18px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+                    <button onClick={() => copyPost(lkHtml)} style={{ ...btn(copied, C.green), fontSize: 12, padding: '8px 14px' }}>
+                      {copied ? 'Copied ✓' : 'Copy HTML'}
+                    </button>
+                    <button onClick={downloadLaunchKit} style={{ ...btn(false), fontSize: 12, padding: '8px 14px' }}>⬇ Download .html</button>
+                    <button onClick={deployLaunchKit} style={{ ...btn(true, C.amber), fontSize: 12, padding: '8px 14px' }}>
+                      ↗ Deploy to craftlauncher.dev/{(lkSlug || 'slug').slice(0, 18)}…
+                    </button>
+                  </div>
+                  {lkDeployMsg && (
+                    <div style={{ padding: '10px 18px', fontSize: 12, color: C.amber, background: '#f5a62308', borderBottom: `1px solid ${C.border}`, lineHeight: 1.5, fontFamily: "'JetBrains Mono', monospace" }}>
+                      {lkDeployMsg}
+                    </div>
+                  )}
+                  <iframe
+                    title="LaunchKit preview"
+                    srcDoc={lkHtml}
+                    sandbox=""
+                    style={{ flex: 1, width: '100%', border: 'none', background: '#080808' }}
+                  />
+                </>
+              )}
+
+              {/* Error fallback (failed generation) */}
+              {!lkLoading && !lkGated && !lkHtml && lkDeployMsg && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 28, textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, opacity: .4 }}>📄</div>
+                  <div style={{ color: C.red, fontSize: 14 }}>{lkDeployMsg}</div>
+                </div>
+              )}
+            </div>
+
+            {!isMobile && <div style={{ height: 'var(--sab)' }} />}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
