@@ -747,6 +747,7 @@ Formatting: clean, print-ready, ONE page. Light background, professional typogra
   const generateThread = async () => {
     if (!threadForm.shipped || !threadForm.learned || !threadForm.next) return
     setUsageError('')
+    if (!userEmail || !userEmail.includes('@')) { setUsageError('Enter your email above to generate.'); return }
     const allowed = await checkGenerationGate() // counts toward the 3 free sessions
     if (!allowed) return
 
@@ -827,6 +828,7 @@ Respond with ONLY the post text.`
   const generatePosts = async () => {
     if (!form.productName || !form.problem || !form.solution) return
     setUsageError('')
+    if (!userEmail || !userEmail.includes('@')) { setUsageError('Enter your email above to generate.'); return }
     const allowed = await checkGenerationGate()
     if (!allowed) return
 
@@ -898,6 +900,7 @@ Respond ONLY with valid JSON:
   const generatePostFlow = async () => {
     if (!pfForm.businessName || !pfForm.serviceType || !pfForm.differentiation || !pfForm.bookingLink) return
     setUsageError('')
+    if (!userEmail || !userEmail.includes('@')) { setUsageError('Enter your email above to generate.'); return }
     const allowed = await checkGenerationGate() // same 3-session free gate as Launcher
     if (!allowed) return
 
