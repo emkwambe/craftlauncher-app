@@ -45,6 +45,19 @@ Focus on converting cold traffic — strangers who arrived from a launch post.
 One primary CTA throughout. No distractions. Persuasion sequence: problem → solution → proof → action.
 Respond with ONLY the HTML. No markdown fences. No preamble.`
 
+const THREAD_SYSTEM_PROMPT = `You are a build-in-public content strategist. Generate platform-native weekly progress posts for a founder.
+This is NOT a launch post — it is a transparent weekly update showing the build journey.
+Tone: honest, humble, specific. Show real numbers, real problems, real progress.
+IH post: lead with what you learned, be transparent about failures.
+Twitter: numbered thread, hook on tweet 1, specific details, end with a question.
+LinkedIn: professional but personal, short paragraphs, what this means for customers.
+Peerlist: maker-to-maker tone, stack details welcome.
+Always include the product URL if provided.
+Respond with valid JSON only: {twitter, indiehackers, linkedin, peerlist}`
+
+// Fixed platform set for Thread (no picker). HN is optional — only rendered if returned.
+const THREAD_CORE_IDS = ['twitter', 'indiehackers', 'linkedin', 'peerlist']
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const C = {
   // Colors
@@ -297,7 +310,8 @@ export default function App() {
   const isMobile = useIsMobile()
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [tab, setTab]             = useState('compose') // compose | results | vault | automate
+  const [tab, setTab]             = useState('compose') // compose | results | vault | thread | automate
+  const [resultMode, setResultMode] = useState('compose') // which generator filled the Results tab
   const [userEmail, setUserEmail] = useState('')
   const [usage, setUsage]         = useState({ generationsThisPeriod: 0, generationLimit: 3, generationsRemaining: 3, postsThisPeriod: 0, postLimit: 1, postsRemaining: 1, plan: 'free' })
   const [usageError, setUsageError] = useState('')
@@ -323,6 +337,8 @@ export default function App() {
   const [lkHtml, setLkHtml]         = useState('')
   const [lkSlug, setLkSlug]         = useState('')
   const [lkDeployMsg, setLkDeployMsg] = useState('')
+  // LaunchThread
+  const [threadForm, setThreadForm] = useState({ shipped: '', learned: '', next: '', productName: '', url: '', tone: 'Humble' })
 
   const doneCount = Object.keys(posts).filter(k => posts[k] && !posts[k].startsWith('⏳')).length
 
@@ -499,6 +515,97 @@ Self-contained: all CSS in one <style> tag, fully mobile-responsive, no JS frame
 
   const closeLaunchKit = () => { setLkOpen(false); setLkHtml(''); setLkGated(false); setLkDeployMsg('') }
 
+  // ── LaunchThread ────────────────────────────────────────────────────────────
+  // Pre-fill product name / URL from the last brief when opening the Thread tab
+  useEffect(() => {
+    if (tab !== 'thread') return
+    setThreadForm(t => ({
+      ...t,
+      productName: t.productName || form.productName || '',
+      url:         t.url || form.url || '',
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
+
+  const generateThread = async () => {
+    if (!threadForm.shipped || !threadForm.learned || !threadForm.next) return
+    setUsageError('')
+    const allowed = await checkGenerationGate() // counts toward the 3 free sessions
+    if (!allowed) return
+
+    setLoading(true)
+    setResultMode('thread')
+    setTab('results')
+    setPosts({})
+    setActivePlatform(null)
+
+    const userPrompt = `Generate platform-native weekly build-in-public posts for a founder.
+
+This week:
+- What I shipped: ${threadForm.shipped}
+- What I learned: ${threadForm.learned}
+- What's next: ${threadForm.next}
+- Product: ${threadForm.productName || 'N/A'}
+- URL: ${threadForm.url || 'N/A'}${threadForm.url ? ' ← include this URL in every post' : ''}
+- Tone: ${threadForm.tone}
+
+Platform style guides:
+- twitter: numbered thread (1/, 2/, 3/), hook on tweet 1, specific details, end with a question
+- indiehackers: transparent founder update — lead with what you learned, be honest about failures
+- linkedin: professional but personal, short paragraphs, what this means for customers
+- peerlist: maker-to-maker tone, stack details welcome
+
+Optionally include a "hackernews" key ONLY if there is something genuinely technically interesting this week (Show HN style, title under 80 chars on the first line); otherwise omit it entirely.
+
+Respond ONLY with valid JSON: {"twitter":"…","indiehackers":"…","linkedin":"…","peerlist":"…"} plus optional "hackernews".`
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          system: [{ type: 'text', text: THREAD_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      })
+      const data = await res.json()
+      const text  = data.content?.map(c => c.text || '').join('') || ''
+      const clean = text.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+      setPosts(parsed)
+      const order = [...THREAD_CORE_IDS, 'hackernews']
+      setActivePlatform(order.find(id => parsed[id]) || null)
+      if (isMobile) setDrawerOpen(true)
+    } catch (e) {
+      setPosts({ _error: 'Generation failed. Please try again.' })
+    }
+    setLoading(false)
+  }
+
+  const regenThreadOne = async (platform) => {
+    if (!platform) return
+    setPosts(prev => ({ ...prev, [platform.id]: '⏳ Regenerating…' }))
+    const prompt = `Write a single ${platform.name} build-in-public weekly update post — a transparent progress update, NOT a launch announcement.
+This week — shipped: ${threadForm.shipped}. Learned: ${threadForm.learned}. Next: ${threadForm.next}.
+Product: ${threadForm.productName || 'N/A'}. URL: ${threadForm.url || 'N/A'}. Tone: ${threadForm.tone}.
+Style: ${platform.desc}
+Respond with ONLY the post text.`
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
+      })
+      const data = await res.json()
+      const t = data.content?.map(c => c.text || '').join('') || ''
+      setPosts(prev => ({ ...prev, [platform.id]: t.trim() }))
+    } catch {
+      setPosts(prev => ({ ...prev, [platform.id]: 'Error regenerating.' }))
+    }
+  }
+
   // ── Generate ──────────────────────────────────────────────────────────────
   const generatePosts = async () => {
     if (!form.productName || !form.problem || !form.solution) return
@@ -511,6 +618,7 @@ Self-contained: all CSS in one <style> tag, fully mobile-responsive, no JS frame
       : PLATFORMS.filter(p => selectedIds.includes(p.id))
 
     setLoading(true)
+    setResultMode('compose')
     setTab('results')
     setPosts({})
     setActivePlatform(null)
@@ -634,9 +742,11 @@ Respond with ONLY the post text.`
   }
 
   // ── Platform list for results sidebar ─────────────────────────────────────
-  const resultPlatforms = usage.plan === 'free'
-    ? FREE_PLATFORM_IDS.map(id => PLATFORMS.find(p => p.id === id)).filter(Boolean)
-    : PLATFORMS.filter(p => selectedIds.includes(p.id))
+  const resultPlatforms = resultMode === 'thread'
+    ? [...THREAD_CORE_IDS, ...(posts.hackernews ? ['hackernews'] : [])].map(id => PLATFORMS.find(p => p.id === id)).filter(Boolean)
+    : usage.plan === 'free'
+      ? FREE_PLATFORM_IDS.map(id => PLATFORMS.find(p => p.id === id)).filter(Boolean)
+      : PLATFORMS.filter(p => selectedIds.includes(p.id))
 
   const activePlatformData = PLATFORMS.find(p => p.id === activePlatform)
 
@@ -660,6 +770,7 @@ Respond with ONLY the post text.`
             ['compose', isMobile ? '✍' : '✍ Compose'],
             ['results', isMobile ? `📄${doneCount > 0 ? doneCount : ''}` : `📄 Posts${doneCount > 0 ? ` (${doneCount})` : ''}${loading ? ' ⏳' : ''}`],
             ['vault', isMobile ? '🗄' : '🗄 Vault'],
+            ['thread', isMobile ? '🧵' : '🧵 Thread'],
             ['automate', isMobile ? '⚡' : '⚡ Automate'],
           ].map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)} style={{
@@ -795,7 +906,7 @@ Respond with ONLY the post text.`
                   <div style={{ fontSize: 32, animation: 'spin 2s linear infinite' }}>✦</div>
                   <div style={{ color: C.text, fontSize: 15, fontWeight: 600 }}>Crafting platform-native posts…</div>
                   <div style={{ color: C.text3, fontSize: 12, textAlign: 'center', maxWidth: 280, lineHeight: 1.6, fontFamily: "'JetBrains Mono', monospace" }}>
-                    Generating {usage.plan === 'free' ? 5 : selectedIds.length} tailored posts.<br/>
+                    Generating {resultMode === 'thread' ? `${resultPlatforms.length} build-in-public` : usage.plan === 'free' ? 5 : selectedIds.length} tailored posts.<br/>
                     Usually 10–20 seconds.
                   </div>
                 </div>
@@ -828,14 +939,14 @@ Respond with ONLY the post text.`
                   platform={activePlatformData}
                   post={posts[activePlatform]}
                   onCopy={copyPost}
-                  onRegen={() => regenOne(activePlatformData)}
+                  onRegen={() => (resultMode === 'thread' ? regenThreadOne(activePlatformData) : regenOne(activePlatformData))}
                   onAutoPost={autoPost}
                   postStatus={postStatus[activePlatform]}
                   copied={copied}
                   connectedApis={connectedApis}
                   plan={usage.plan}
                   onConnect={() => setTab('automate')}
-                  onLaunchKit={generateLaunchKit}
+                  onLaunchKit={resultMode === 'thread' ? undefined : generateLaunchKit}
                   launchKitLoading={lkLoading}
                 />
               )}
@@ -997,6 +1108,77 @@ Respond with ONLY the post text.`
                   )}
                 </>
               )}
+
+              <div style={{ height: `calc(20px + var(--sab))` }} />
+            </div>
+          </div>
+        )}
+
+        {/* ══ THREAD TAB ══ */}
+        {tab === 'thread' && (
+          <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '20px 16px' : '32px 40px' }}>
+            <div style={{ maxWidth: 720, margin: '0 auto' }}>
+              <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: isMobile ? 28 : 36, fontWeight: 400, lineHeight: 1.1, marginBottom: 6, letterSpacing: '-.5px' }}>
+                3 sentences a week.<br/><span style={{ color: C.amber }}>5 communities stay warm.</span>
+              </h1>
+              <p style={{ color: C.text2, fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+                Build-in-public, not launch hype. Drop this week's progress — get a transparent update tailored to each platform.
+              </p>
+
+              <UsageBar usage={usage} userEmail={userEmail} setUserEmail={setUserEmail} loadUsage={loadUsage} usageError={usageError} onUpgrade={handleUpgrade} />
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {[
+                  ['shipped', 'What I shipped this week *', 'Launched the billing flow, fixed a CORS bug, wrote the privacy policy', 3],
+                  ['learned', 'What I learned *',           "Lemon Squeezy's webhook fires faster than I expected. Custom data works perfectly.", 3],
+                  ['next',    "What's next *",              'Post on Indie Hackers, build LaunchVault, onboard first 10 users', 3],
+                ].map(([k, label, ph, rows]) => (
+                  <div key={k}>
+                    <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}>{label}</label>
+                    <textarea value={threadForm[k]} onChange={e => setThreadForm(f => ({ ...f, [k]: e.target.value }))} placeholder={ph} rows={rows} style={{ ...input, resize: 'vertical' }} />
+                  </div>
+                ))}
+
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                  {[
+                    ['productName', 'Product Name', 'e.g. CraftLauncher'],
+                    ['url',         'Product URL',  'https://craftlauncher.dev'],
+                  ].map(([k, label, ph]) => (
+                    <div key={k}>
+                      <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 6, fontFamily: "'JetBrains Mono', monospace" }}>{label}</label>
+                      <input value={threadForm[k]} onChange={e => setThreadForm(f => ({ ...f, [k]: e.target.value }))} placeholder={ph} style={input} />
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: C.text3, letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>Tone</label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {TONES.map(t => (
+                      <button key={t} onClick={() => setThreadForm(f => ({ ...f, tone: t }))} style={{ ...btn(threadForm.tone === t), borderRadius: 20, padding: '6px 16px', minHeight: 36 }}>{t}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 11, color: C.text3, lineHeight: 1.6, fontFamily: "'JetBrains Mono', monospace" }}>
+                  → Generates for: 𝕏 Twitter · ⚙️ Indie Hackers · 💼 LinkedIn · 🌿 Peerlist (+ ▲ Hacker News if there's something technical)
+                </div>
+
+                <button
+                  onClick={generateThread}
+                  disabled={!threadForm.shipped || !threadForm.learned || !threadForm.next}
+                  style={{
+                    width: '100%', padding: '16px', borderRadius: 10, border: 'none',
+                    background: 'linear-gradient(135deg,#f5a623,#e8472a)', color: '#080808',
+                    fontSize: 15, fontWeight: 700, cursor: 'pointer', letterSpacing: '-.3px',
+                    opacity: (!threadForm.shipped || !threadForm.learned || !threadForm.next) ? .4 : 1,
+                    minHeight: 52, fontFamily: "'Instrument Sans', system-ui, sans-serif",
+                  }}
+                >
+                  Generate Thread Posts 🧵
+                  {usage.plan === 'free' && <span style={{ fontSize: 11, marginLeft: 8, opacity: .7 }}>({usage.generationsRemaining ?? 3} sessions left)</span>}
+                </button>
+              </div>
 
               <div style={{ height: `calc(20px + var(--sab))` }} />
             </div>
